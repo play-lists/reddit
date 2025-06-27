@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>M3U Gallery Viewer</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Tailwind Configuration -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              200: '#bae6fd',
+              300: '#7dd3fc',
+              400: '#38bdf8',
+              500: '#0ea5e9',
+              600: '#0284c7',
+              700: '#0369a1',
+              800: '#075985',
+              900: '#0c4a6e',
+              950: '#082f49',
+            },
+            accent: {
+              50: '#fefce8',
+              100: '#fef9c3',
+              200: '#fef08a',
+              300: '#fde047',
+              400: '#facc15',
+              500: '#eab308',
+              600: '#ca8a04',
+              700: '#a16207',
+              800: '#854d0e',
+              900: '#713f12',
+              950: '#422006',
+            }
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.5s ease-in-out',
+            'slide-up': 'slideUp 0.3s ease-out',
+            'pulse-slow': 'pulse 3s ease-in-out infinite',
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            slideUp: {
+              '0%': { transform: 'translateY(20px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            }
+          }
+        },
+      },
+    }
+  </script>
+  
+  <!-- Custom styles -->
+  <style>
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+    
+    .image-card {
+      aspect-ratio: 16/10;
+      overflow: hidden;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      transition: all 0.3s ease;
+    }
+    
+    .image-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    }
+    
+    .image-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.3s ease;
+    }
+    
+    .image-card:hover img {
+      transform: scale(1.05);
+    }
+    
+    .suggestion-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+    
+    .suggestion-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+    }
+    
+    .modal-backdrop {
+      backdrop-filter: blur(8px);
+      background: rgba(0, 0, 0, 0.8);
+    }
+    
+    .loader {
+      border: 4px solid #f3f4f6;
+      border-top: 4px solid #3b82f6;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .glass-effect {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+  <div id="app"></div>
+  
+  <script type="module">
+    import { h, render } from 'https://cdn.skypack.dev/preact@10.19.3';
+    import { html } from 'https://cdn.skypack.dev/htm@3.1.1/preact';
+    import { useState, useEffect, useRef } from 'https://cdn.skypack.dev/preact@10.19.3/hooks';
+    
+    // Available galleries
+    const availableGalleries = [
+      { name: 'ArchitecturePorn', title: 'Architecture', description: 'Stunning architectural photography', icon: '🏛️' },
+      { name: 'CityPorn', title: 'City Views', description: 'Beautiful urban landscapes', icon: '🌆' },
+      { name: 'EarthPorn', title: 'Earth Views', description: 'Breathtaking natural landscapes', icon: '🌍' },
+      { name: 'ExposurePorn', title: 'Exposure', description: 'Artistic exposure photography', icon: '📸' },
+      { name: 'MostBeautiful', title: 'Most Beautiful', description: 'The most beautiful images', icon: '✨' },
+      { name: 'NatureIsFuckingLit', title: 'Nature', description: 'Amazing nature photography', icon: '🌿' },
+      { name: 'RuralPorn', title: 'Rural Views', description: 'Peaceful countryside scenes', icon: '🌾' },
+      { name: 'SkyPorn', title: 'Sky Views', description: 'Magnificent skies and clouds', icon: '☁️' },
+      { name: 'SpacePorn', title: 'Space', description: 'Stunning space photography', icon: '🚀' },
+      { name: 'UnitedStatesofAmerica', title: 'USA', description: 'Beautiful American landscapes', icon: '🇺🇸' },
+      { name: 'WaterPorn', title: 'Water Views', description: 'Serene water photography', icon: '🌊' }
+    ];
+    
+    // Parse M3U content
+    const parseM3U = (content) => {
+      const lines = content.split('\n').filter(line => line.trim());
+      const images = [];
+      let title = '';
+      
+      for (const line of lines) {
+        if (line.startsWith('#EXTM3U')) {
+          title = line.replace('#EXTM3U - ', '').trim();
+        } else if (line.startsWith('http')) {
+          images.push(line.trim());
+        }
+      }
+      
+      return { title, images };
+    };
+    
+    // Load M3U file
+    const loadM3U = async (filename) => {
+      try {
+        const response = await fetch(filename);
+        if (!response.ok) throw new Error('Failed to load gallery');
+        const content = await response.text();
+        return parseM3U(content);
+      } catch (error) {
+        throw new Error(`Failed to load ${filename}: ${error.message}`);
+      }
+    };
+    
+    // Get query parameter
+    const getQueryParam = (param) => {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(param);
+    };
+    
+    // Image component with lazy loading
+    const ImageCard = ({ src, index, onClick }) => {
+      const [loaded, setLoaded] = useState(false);
+      const [error, setError] = useState(false);
+      const [imgSrc, setImgSrc] = useState('');
+      const imgRef = useRef();
+      
+      useEffect(() => {
+        const observer = new IntersectionObserver(
+          ([entry]) => {
+            if (entry.isIntersecting && !imgSrc) {
+              setImgSrc(src);
+              observer.disconnect();
+            }
+          },
+          { threshold: 0.1 }
+        );
+        
+        if (imgRef.current) {
+          observer.observe(imgRef.current);
+        }
+        
+        return () => observer.disconnect();
+      }, [src, imgSrc]);
+      
+      return html`
+        <div 
+          class="image-card animate-fade-in cursor-pointer"
+          style="animation-delay: ${index * 0.1}s"
+          onClick=${() => onClick(src)}
+          ref=${imgRef}
+        >
+          ${!loaded && !error && html`
+            <div class="w-full h-full flex items-center justify-center bg-gray-200">
+              <div class="loader"></div>
+            </div>
+          `}
+          ${error && html`
+            <div class="w-full h-full flex items-center justify-center bg-gray-200">
+              <div class="text-gray-500 text-center">
+                <div class="text-2xl mb-2">📷</div>
+                <div class="text-sm">Failed to load</div>
+              </div>
+            </div>
+          `}
+          ${imgSrc && html`
+            <img
+              src=${imgSrc}
+              class="${loaded ? 'block' : 'hidden'}"
+              onLoad=${() => setLoaded(true)}
+              onError=${() => setError(true)}
+              alt="Gallery image ${index + 1}"
+            />
+          `}
+        </div>
+      `;
+    };
+    
+    // Gallery suggestion card
+    const SuggestionCard = ({ gallery, onClick }) => {
+      return html`
+        <div 
+          class="suggestion-card animate-slide-up"
+          onClick=${() => onClick(gallery.name)}
+        >
+          <div class="text-4xl mb-3">${gallery.icon}</div>
+          <h3 class="text-xl font-bold mb-2">${gallery.title}</h3>
+          <p class="text-sm opacity-90">${gallery.description}</p>
+          <div class="mt-4 flex items-center text-sm opacity-75">
+            <span>Click to view gallery</span>
+            <span class="ml-2">→</span>
+          </div>
+        </div>
+      `;
+    };
+    
+    // Modal component
+    const Modal = ({ isOpen, onClose, imageSrc }) => {
+      useEffect(() => {
+        const handleEscape = (e) => {
+          if (e.key === 'Escape') onClose();
+        };
+        
+        if (isOpen) {
+          document.addEventListener('keydown', handleEscape);
+          document.body.style.overflow = 'hidden';
+        }
+        
+        return () => {
+          document.removeEventListener('keydown', handleEscape);
+          document.body.style.overflow = 'unset';
+        };
+      }, [isOpen, onClose]);
+      
+      if (!isOpen) return null;
+      
+      return html`
+        <div 
+          class="fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4"
+          onClick=${onClose}
+        >
+          <div 
+            class="max-w-4xl max-h-full relative"
+            onClick=${(e) => e.stopPropagation()}
+          >
+            <button
+              class="absolute -top-12 right-0 text-white text-2xl hover:text-gray-300 transition-colors"
+              onClick=${onClose}
+            >
+              ✕
+            </button>
+            <img
+              src=${imageSrc}
+              class="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              alt="Full size image"
+            />
+          </div>
+        </div>
+      `;
+    };
+    
+    // Main App component
+    const App = () => {
+      const [gallery, setGallery] = useState(null);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState(null);
+      const [modalImage, setModalImage] = useState(null);
+      const [selectedGallery, setSelectedGallery] = useState(null);
+      
+      // Load gallery on mount
+      useEffect(() => {
+        const galleryParam = getQueryParam('gallery');
+        if (galleryParam) {
+          loadGallery(galleryParam);
+        }
+      }, []);
+      
+      const loadGallery = async (galleryName) => {
+        setLoading(true);
+        setError(null);
+        setSelectedGallery(galleryName);
+        
+        try {
+          const galleryData = await loadM3U(`${galleryName}.m3u`);
+          setGallery(galleryData);
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      const handleGalleryClick = (galleryName) => {
+        const newUrl = `${window.location.pathname}?gallery=${galleryName}`;
+        window.history.pushState({}, '', newUrl);
+        loadGallery(galleryName);
+      };
+      
+      const handleBackClick = () => {
+        window.history.pushState({}, '', window.location.pathname);
+        setGallery(null);
+        setSelectedGallery(null);
+        setError(null);
+      };
+      
+      const openModal = (imageSrc) => {
+        setModalImage(imageSrc);
+      };
+      
+      const closeModal = () => {
+        setModalImage(null);
+      };
+      
+      return html`
+        <div class="container mx-auto px-4 py-8">
+          <!-- Header -->
+          <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-800 mb-4">
+              📸 M3U Gallery Viewer
+            </h1>
+            <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+              Discover stunning photography collections from around the world
+            </p>
+          </header>
+          
+          <!-- Gallery Navigation -->
+          ${gallery && html`
+            <div class="mb-8">
+              <button
+                onClick=${handleBackClick}
+                class="inline-flex items-center px-4 py-2 bg-white text-gray-700 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 hover:bg-gray-50"
+              >
+                <span class="mr-2">←</span>
+                Back to Galleries
+              </button>
+              <h2 class="text-2xl font-bold text-gray-800 mt-4">
+                ${gallery.title}
+              </h2>
+              <p class="text-gray-600 mt-1">
+                ${gallery.images.length} images
+              </p>
+            </div>
+          `}
+          
+          <!-- Loading State -->
+          ${loading && html`
+            <div class="flex justify-center items-center min-h-64">
+              <div class="text-center">
+                <div class="loader mx-auto mb-4"></div>
+                <p class="text-gray-600">Loading gallery...</p>
+              </div>
+            </div>
+          `}
+          
+          <!-- Error State -->
+          ${error && html`
+            <div class="text-center py-12">
+              <div class="text-6xl mb-4">❌</div>
+              <h3 class="text-xl font-semibold text-red-600 mb-2">
+                Error Loading Gallery
+              </h3>
+              <p class="text-gray-600 mb-6">${error}</p>
+              <button
+                onClick=${handleBackClick}
+                class="px-6 py-3 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+              >
+                Back to Galleries
+              </button>
+            </div>
+          `}
+          
+          <!-- Gallery Images -->
+          ${gallery && !loading && !error && html`
+            <div class="gallery-grid">
+              ${gallery.images.map((imageSrc, index) => html`
+                <${ImageCard} 
+                  key=${index}
+                  src=${imageSrc} 
+                  index=${index}
+                  onClick=${openModal}
+                />
+              `)}
+            </div>
+          `}
+          
+          <!-- Gallery Suggestions -->
+          ${!gallery && !loading && !error && html`
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              ${availableGalleries.map((gallery, index) => html`
+                <${SuggestionCard} 
+                  key=${gallery.name}
+                  gallery=${gallery}
+                  onClick=${handleGalleryClick}
+                />
+              `)}
+            </div>
+          `}
+          
+          <!-- Footer -->
+          <footer class="text-center mt-16 py-8 border-t border-gray-200">
+            <p class="text-gray-500 text-sm">
+              M3U Gallery Viewer • Built with Preact HTM & Tailwind CSS
+            </p>
+          </footer>
+        </div>
+        
+        <!-- Modal -->
+        <${Modal} 
+          isOpen=${!!modalImage}
+          onClose=${closeModal}
+          imageSrc=${modalImage}
+        />
+      `;
+    };
+    
+    // Render the app
+    render(html`<${App} />`, document.getElementById('app'));
+  </script>
+</body>
+</html>
